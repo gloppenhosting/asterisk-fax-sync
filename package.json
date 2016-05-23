@@ -1,0 +1,32 @@
+{
+  "name": "asterisk-fax-sync",
+  "license": "MIT",
+  "version": "1.0.0",
+  "description": "Sync fax from db to be send and recieved",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": {
+    "name": "Andreas Krüger",
+    "email": "ak@krugercorp.dk"
+  },
+  "contributors": [
+    {
+      "name": "Jeppe Larsen",
+      "email": "jrl@krugercorp.dk"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://bitbucket.org/krugercorp/node-voip-api"
+  },
+  "dependencies": {
+    "config": "^1.17.1",
+    "knex": "^0.9.0",
+    "md5": "^2.0.0",
+    "mkdirp": "^0.5.1",
+    "moment": "^2.10.6",
+    "mysql": "^2.10.2"
+  }
+}
