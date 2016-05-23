@@ -64,6 +64,10 @@ domain.run(function() {
     mkdirp(faxDirectoryOut, function(err) {
         mkdirp(faxDirectoryIn, function(err) {
             let loop = () => {
+                if (require('os').hostname().toString().indexOf('upstream') <= -1) {
+                    return;
+                }
+
                 faxProcessor.processAndSendPendingFaxes()
                     .then(() => {
                         setTimeout(loop, config.get('update_interval_sec') * 1000);
