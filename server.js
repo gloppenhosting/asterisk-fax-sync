@@ -6,6 +6,11 @@ var moment = require('moment');
 var config = require('config');
 var debug = process.env.NODE_DEBUG || config.get('debug') || true;
 var heartBeatInterval = null;
+let FaxProcessor = require('./faxprocessor');
+const ownServerName = require('os').hostname();
+const faxDirectoryOut = '/var/spool/asterisk/fax/outgoing';
+const faxDirectoryIn = '/var/spool/asterisk/fax/incoming';
+const faxProcessor = new FaxProcessor(ownServerName, faxDirectoryOut, faxDirectoryIn, knex);
 
 // On any errors. Write them to console and exit program with error code
 domain.on('error', function(err) {
@@ -54,12 +59,6 @@ domain.run(function() {
                 process.exit(1);
             })
     }, 10000);
-
-    let FaxProcessor = require('./faxprocessor');
-    const ownServerName = require('os').hostname();
-    const faxDirectoryOut = '/var/spool/asterisk/fax/outgoing';
-    const faxDirectoryIn = '/var/spool/asterisk/fax/incoming';
-    const faxProcessor = new FaxProcessor(ownServerName, faxDirectoryOut, faxDirectoryIn, knex);
 
     mkdirp(faxDirectoryOut, function(err) {
         mkdirp(faxDirectoryIn, function(err) {
