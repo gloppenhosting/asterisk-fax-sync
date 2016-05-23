@@ -57,11 +57,11 @@ domain.run(function() {
     }, 10000);
 
     let FaxProcessor = require('./faxprocessor');
-    const ownServerName = require('os').hostname();
+    const ownServerName = 'odn1-voip-cluster02-upstream01'; //require('os').hostname();
     const faxDirectoryOut = '/var/spool/asterisk/fax/outgoing';
     const faxDirectoryIn = '/var/spool/asterisk/fax/incoming';
     const faxProcessor = new FaxProcessor(ownServerName, faxDirectoryOut, faxDirectoryIn, knex);
-
+    
     mkdirp(faxDirectoryOut, function(err) {
         mkdirp(faxDirectoryIn, function(err) {
             let loop = () => {
