@@ -12,4 +12,4 @@ COPY /config /config
 
 RUN npm install
 
-CMD ["node", "server.js"]
+CMD ["node", "--use_strict", "server.js"]
