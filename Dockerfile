@@ -3,8 +3,6 @@ MAINTAINER Andreas Krüger
 ENV NODE_ENV production
 ENV NODE_DEBUG false
 
-USER asterisk
-
 RUN apk add --update nodejs
 
 COPY /server.js /server.js
