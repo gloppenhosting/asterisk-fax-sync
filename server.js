@@ -6,6 +6,7 @@ var moment = require('moment');
 var config = require('config');
 var debug = process.env.NODE_DEBUG || config.get('debug') || true;
 var heartBeatInterval = null;
+var mkdirp = require('mkdirp');
 
 // On any errors. Write them to console and exit program with error code
 domain.on('error', function(err) {
@@ -61,7 +62,7 @@ domain.run(function() {
     const faxDirectoryOut = '/var/spool/asterisk/fax/outgoing';
     const faxDirectoryIn = '/var/spool/asterisk/fax/incoming';
     const faxProcessor = new FaxProcessor(ownServerName, faxDirectoryOut, faxDirectoryIn, knex);
-    
+
     mkdirp(faxDirectoryOut, function(err) {
         mkdirp(faxDirectoryIn, function(err) {
             let loop = () => {
