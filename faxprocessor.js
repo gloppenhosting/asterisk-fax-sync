@@ -47,44 +47,6 @@ class FaxProcessor {
         });
     }
 
-    setAsteriskPermissions(file) {
-        return new Promise((resolve, reject) => {
-            console.log(`--> Setting permissions for ${file} to uid (${ASTERISK_USER_ID}) gid (${ASTERISK_GROUP_ID})`);
-            
-            fs.chown(file, ASTERISK_USER_ID, ASTERISK_GROUP_ID, (err) => {
-                if (err) return reject({ msg: 'Could not change permissions for ' + file, error: err });
-
-                resolve();
-            });
-        });
-    }
-
-    checkOutgoingFaxes() {
-        return new Promise((resolve, reject) => {
-            console.log('--> Checking pending faxes');
-            this.knex
-                .select('faxes_outgoing.id', 'faxes_outgoing.fax_data', 'faxes_outgoing.filename', 'faxes_outgoing.outgoing_number_id', 'faxes_outgoing.to')
-                .from('faxes_outgoing')
-                .innerJoin('iaxfriends', 'iaxfriends.id', 'faxes_outgoing.iaxfriends_id')
-                .where('iaxfriends.name', this.serverName)
-                .where('state', 'created')
-                .then(resolve)
-                .catch(reject);
-        });
-    }
-
-    sendFax(callfile) {
-        return new Promise((resolve, reject) => {
-            let filename = path.basename(callfile);
-
-            fs.rename(callfile, path.join(ASTERISK_SPOOL_OUTGOING_DIR, filename), (err) => {
-                if (err) return reject({ msg: 'Could not move callfile to', ASTERISK_SPOOL_OUTGOING_DIR, error: err });
-
-                resolve();
-            });
-        });
-    }
-
     processOutgoingFax(outgoingFax) {
         return new Promise((resolve, reject) => {
 
@@ -117,9 +79,6 @@ class FaxProcessor {
                 .then((_callFile) => {
                     callFile = _callFile;
                     
-                    return this.setAsteriskPermissions(callFile);
-                })
-                .then(() => {
                     return this.updateFaxState(id, 'processed');
                 })
                 .then(() => {
@@ -128,6 +87,50 @@ class FaxProcessor {
                 .then(() => {
                     resolve(callFile);
                 })
+                .catch(reject);
+        });
+    }
+
+    sendFax(callfile) {
+        return new Promise((resolve, reject) => {
+            let filename = path.basename(callfile);
+            
+            this.setAsteriskPermissions(callfile).then(() => {
+                let destination = path.join(ASTERISK_SPOOL_OUTGOING_DIR, filename);
+            
+                console.log('--> Moving callfile to', destination);
+                
+                fs.rename(callfile, path.join(ASTERISK_SPOOL_OUTGOING_DIR, filename), (err) => {
+                    if (err) return reject({ msg: 'Could not move callfile to', ASTERISK_SPOOL_OUTGOING_DIR, error: err });
+
+                    resolve();
+                });
+            });
+        });
+    }
+    
+    setAsteriskPermissions(file) {
+        return new Promise((resolve, reject) => {
+            console.log(`--> Setting permissions for ${file} to uid (${ASTERISK_USER_ID}) gid (${ASTERISK_GROUP_ID})`);
+            
+            fs.chown(file, ASTERISK_USER_ID, ASTERISK_GROUP_ID, (err) => {
+                if (err) return reject({ msg: 'Could not change permissions for ' + file, error: err });
+
+                resolve();
+            });
+        });
+    }
+
+    checkOutgoingFaxes() {
+        return new Promise((resolve, reject) => {
+            console.log('--> Checking pending faxes');
+            this.knex
+                .select('faxes_outgoing.id', 'faxes_outgoing.fax_data', 'faxes_outgoing.filename', 'faxes_outgoing.outgoing_number_id', 'faxes_outgoing.to')
+                .from('faxes_outgoing')
+                .innerJoin('iaxfriends', 'iaxfriends.id', 'faxes_outgoing.iaxfriends_id')
+                .where('iaxfriends.name', this.serverName)
+                .where('state', 'created')
+                .then(resolve)
                 .catch(reject);
         });
     }
