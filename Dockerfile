@@ -3,7 +3,7 @@ MAINTAINER Andreas Krüger
 ENV NODE_ENV production
 ENV NODE_DEBUG false
 
-RUN apk add --update nodejs
+#RUN apk add --update nodejs
 
 COPY /server.js /server.js
 COPY /package.json /package.json
