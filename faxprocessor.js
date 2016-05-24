@@ -19,8 +19,8 @@ class FaxProcessor {
         this.knex = knex;
         this.serverName = serverName;
 
-        this.asteriskUID = userid.uid(ASTERISK_USER_NAME);
-        this.asteriskGID = userid.gid(ASTERISK_GROUP_NAME);
+        this.asteriskUID = parseInt(userid.uid(ASTERISK_USER_NAME)) || 0;
+        this.asteriskGID = parseInt(userid.gid(ASTERISK_GROUP_NAME)) || 0;
     }
 
     processAndSendPendingFaxes() {
