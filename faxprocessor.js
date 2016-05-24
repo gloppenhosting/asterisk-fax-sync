@@ -4,16 +4,23 @@ const fs = require('fs');
 const path = require('path');
 const exec = require('child_process').exec;
 const mkdirp = require('mkdirp');
+const userid = require('userid');
 
 const GHOSTSCRIPT_ARGUMENTS = process.env.ASTFAX_GS_ARGS || '-q -dNOPAUSE -dBATCH -sDEVICE=tiffg4 -sPAPERSIZE=letter';
 const ASTERISK_SPOOL_OUTGOING_DIR = process.env.ASTFAX_SPOOL_OUT_DIR || '/var/spool/asterisk/outgoing/';
 const ASTERISK_SPOOL_FAX_IN_DIR = process.env.ASTFAX_FAX_IN_DIR || '/var/spool/asterisk/fax/incoming/';
 const ASTERISK_SPOOL_FAX_OUT_DIR = process.env.ASTFAX_FAX_OUT_DIR || '/var/spool/asterisk/fax/outgoing/';
 
+const ASTERISK_USER_NAME = process.env.ASTFAX_AST_USERNAME || 'asterisk';
+const ASTERISK_GROUP_NAME = process.env.ASTFAX_AST_GROUPNAME || 'asterisk';
+
 class FaxProcessor {
     constructor(serverName, knex) {
         this.knex = knex;
         this.serverName = serverName;
+
+        this.asteriskUID = userid.uid(ASTERISK_USER_NAME);
+        this.asteriskGID = userid.gid(ASTERISK_GROUP_NAME);
     }
 
     processAndSendPendingFaxes() {
@@ -40,6 +47,18 @@ class FaxProcessor {
                         .then(resolve)
                         .catch(reject);
                 });
+            });
+        });
+    }
+
+    setAsteriskPermissions(file) {
+        return new Promise((resolve, reject) => {
+            console.log(`--> Setting permissions for ${file} to user ${ASTERISK_USER_NAME}(${this.asteriskUID}) group ${ASTERISK_GROUP_NAME}(${this.asteriskGID})`);
+            
+            fs.chown(file, this.asteriskUID, this.asteriskGID, (err) => {
+                if (err) return reject({ msg: 'Could not change permissions for ' + file, error: err });
+
+                resolve();
             });
         });
     }
@@ -101,7 +120,10 @@ class FaxProcessor {
                 })
                 .then((_callFile) => {
                     callFile = _callFile;
-
+                    
+                    return this.setAsteriskPermissions(callFile);
+                })
+                .then(() => {
                     return this.updateFaxState(id, 'processed');
                 })
                 .then(() => {
