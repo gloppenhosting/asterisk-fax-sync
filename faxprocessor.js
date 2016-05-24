@@ -4,7 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const exec = require('child_process').exec;
 const mkdirp = require('mkdirp');
-const userid = require('userid');
 
 const GHOSTSCRIPT_ARGUMENTS = process.env.ASTFAX_GS_ARGS || '-q -dNOPAUSE -dBATCH -sDEVICE=tiffg4 -sPAPERSIZE=letter';
 const ASTERISK_SPOOL_OUTGOING_DIR = process.env.ASTFAX_SPOOL_OUT_DIR || '/var/spool/asterisk/outgoing/';
