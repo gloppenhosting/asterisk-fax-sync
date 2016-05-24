@@ -59,7 +59,7 @@ domain.run(function() {
 
     const FaxProcessor = require('./faxprocessor');
     
-    const ownServerName = require('os').hostname();
+    const ownServerName = 'odn1-voip-cluster02-upstream01'; //require('os').hostname();
     const faxProcessor = new FaxProcessor(ownServerName, knex);
 
     let loop = () => {
@@ -68,7 +68,7 @@ domain.run(function() {
             return;
         }
 
-        faxProcessor.processAndSendPendingFaxes()
+        Promise.all([faxProcessor.processAndSendPendingFaxes(), faxProcessor.processAndReceivePendingFaxes()])
             .then(() => {
                 setTimeout(loop, config.get('update_interval_sec') * 1000);
             })

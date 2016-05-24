@@ -11,12 +11,30 @@ const ASTERISK_SPOOL_FAX_IN_DIR = process.env.ASTFAX_FAX_IN_DIR || '/var/spool/a
 const ASTERISK_SPOOL_FAX_OUT_DIR = process.env.ASTFAX_FAX_OUT_DIR || '/var/spool/asterisk/fax/outgoing/';
 
 const ASTERISK_USER_ID = parseInt(process.env.ASTFAX_AST_UID) || 0;
-const ASTERISK_GROUP_ID = parseInt(process.env.ASTFAX_AST_GID) || 0;
+const ASTERISK_GROUP_ID = parseInt(process.env.ASTFAX_AST_GID) || 0;
 
 class FaxProcessor {
     constructor(serverName, knex) {
         this.knex = knex;
         this.serverName = serverName;
+    }
+
+    processAndReceivePendingFaxes() {
+        return new Promise((resolve, reject) => {
+            this.checkIncomingFaxes()
+                .then((pendingFaxesMetaFiles) => {
+                    return Promise.all(pendingFaxesMetaFiles.map((pendingFaxMetaFile) => {
+                        return this.processIncomingFax(path.join(ASTERISK_SPOOL_FAX_IN_DIR, pendingFaxMetaFile));
+                    }));
+                })
+                .then((receivedFaxObjects) => {
+                    return Promise.all(receivedFaxObjects.map((receivedFaxObject) => {
+                        return this.receiveFax(receivedFaxObject);
+                    }));
+                })
+                .then(resolve)
+                .catch(reject);
+        });
     }
 
     processAndSendPendingFaxes() {
@@ -47,6 +65,132 @@ class FaxProcessor {
         });
     }
 
+    processIncomingFax(incomingFaxMetaFile) {
+        return new Promise((resolve, reject) => {
+            console.log('--> Processing incoming fax', incomingFaxMetaFile);
+
+            let metadataObject = null;
+            let serverId = null;
+            let faxNumberId = null;
+            let pdfFile = null;
+
+            this.getIncomingFaxDataFromFile(incomingFaxMetaFile)
+                .then((_metadataObject) => {
+                    metadataObject = _metadataObject;
+
+                    return this.getIAXFriendsIdFromServerName(this.serverName);
+                })
+                .then((_serverId) => {
+                    serverId = _serverId;
+
+                    return this.getFaxNumberIdFromNumber(metadataObject.to);
+                })
+                .then((_faxNumberId) => {
+                    faxNumberId = _faxNumberId;
+                    
+                    return this.convertTiffToPDF(metadataObject.file);
+                })
+                .then((_pdfFile) => {
+                    pdfFile = _pdfFile;
+                    
+                    return this.getPDFFileBuffer(pdfFile);
+                })
+                .then((pdfData) => {
+                    resolve({
+                        tenants_id: metadataObject.tenant_id,
+                        iaxfriends_id: serverId,
+                        filename: path.basename(pdfFile),
+                        state: 'unread',
+                        receive_time: new Date(parseInt(metadataObject.receive_time) * 1000),
+                        from: metadataObject.from,
+                        incoming_number_id: faxNumberId,
+                        fax_data: pdfData
+                    });
+                })
+                .catch(reject);
+        });
+    }
+    
+    getPDFFileBuffer(pdfFile) {
+        return new Promise((resolve, reject) => {
+            fs.readFile(pdfFile, (err, buf) => {
+                if (err) return reject({msg: 'Could not read PDF file', error: err});
+                
+                resolve(buf);
+            });
+        });
+    }
+
+    getFaxNumberIdFromNumber(number) {
+        return new Promise((resolve, reject) => {
+            this.knex
+                .select('id')
+                .from('trunk_numbers')
+                .where('full_number', number.replace('+', '00'))
+                .orWhere('full_number', number.replace('00', '+'))
+                .then((rows) => {
+                    if (rows.length != 1)
+                        return reject({ msg: 'Not one fax number with number ' + number, error: null });
+
+                    resolve(parseInt(rows[0].id));
+                })
+                .catch(reject);
+        });
+    }
+
+    getIAXFriendsIdFromServerName(serverName) {
+        return new Promise((resolve, reject) => {
+            this.knex
+                .select('id')
+                .from('iaxfriends')
+                .where('name', serverName)
+                .then((rows) => {
+                    if (rows.length != 1)
+                        return reject({ msg: 'Not one server with same name', error: null });
+
+                    resolve(parseInt(rows[0].id));
+                })
+                .catch(reject);
+        });
+    }
+
+    removeIncomingFaxFromServer(metaDataFile, tiffFile, pdfFile) {
+        return new Promise((resolve, reject) => {
+            fs.unlink(metaDataFile, (err) => {
+                if (err) return reject({ msg: 'Could not delete incoming fax metadata file', error: err });
+
+                fs.unlink(tiffFile, (err) => {
+                    if (err) return reject({ msg: 'Could not delete incoming fax file', error: err });
+                    
+                    fs.unlink(pdfFile, (err) => {
+                        if (err) return reject({ msg: 'Could not delete incoming fax pdf file', error: err });
+                        
+                        resolve();
+                    });
+                });
+            });
+        });
+    }
+
+    getIncomingFaxDataFromFile(file) {
+        return new Promise((resolve, reject) => {
+            fs.readFile(file, { encoding: 'utf8' }, (err, metaData) => {
+                if (err) return reject({ msg: 'Could not read metadata file for incoming fax', error: err });
+
+                let metaDataObject = null;
+
+                try {
+                    metaDataObject = JSON.parse(metaData);
+                }
+                catch (ex) {
+                    return reject({ msg: 'Metadata file was not valid json', error: ex });
+                }
+
+                resolve(metaDataObject);
+            });
+        });
+    }
+
     processOutgoingFax(outgoingFax) {
         return new Promise((resolve, reject) => {
 
@@ -56,7 +200,7 @@ class FaxProcessor {
             let outgoing_number_id = outgoingFax.outgoing_number_id;
             let to = outgoingFax.to;
 
-            console.log('--> Processing fax', id);
+            console.log('--> Processing outgoing fax', id);
 
             let pdfFile = null;
             let tiffFile = null;
@@ -78,7 +222,7 @@ class FaxProcessor {
                 })
                 .then((_callFile) => {
                     callFile = _callFile;
-                    
+
                     return this.updateFaxState(id, 'processed');
                 })
                 .then(() => {
@@ -91,15 +235,34 @@ class FaxProcessor {
         });
     }
 
+    receiveFax(faxObject) {
+        return new Promise((resolve, reject) => {
+            let pdfFile = path.join(ASTERISK_SPOOL_FAX_IN_DIR, faxObject.filename);
+            
+            let faxMetadataFile = `${pdfFile.replace(/\.pdf/i, '.tiff')}.json`; 
+            let faxFile = pdfFile.replace(/\.pdf/i, '.tiff');
+            
+            console.log('--> Deleting incoming fax files', faxMetadataFile, faxFile);
+            this.knex
+                .insert(faxObject)
+                .into('faxes_incoming')
+                .then(() => {
+                    return this.removeIncomingFaxFromServer(faxMetadataFile, faxFile, pdfFile);
+                })
+                .then(resolve)
+                .catch(reject);
+        });
+    }
+
     sendFax(callfile) {
         return new Promise((resolve, reject) => {
             let filename = path.basename(callfile);
-            
+
             this.setAsteriskPermissions(callfile).then(() => {
                 let destination = path.join(ASTERISK_SPOOL_OUTGOING_DIR, filename);
-            
+
                 console.log('--> Moving callfile to', destination);
-                
+
                 fs.rename(callfile, path.join(ASTERISK_SPOOL_OUTGOING_DIR, filename), (err) => {
                     if (err) return reject({ msg: 'Could not move callfile to', ASTERISK_SPOOL_OUTGOING_DIR, error: err });
 
@@ -108,11 +271,11 @@ class FaxProcessor {
             });
         });
     }
-    
+
     setAsteriskPermissions(file) {
         return new Promise((resolve, reject) => {
             console.log(`--> Setting permissions for ${file} to uid (${ASTERISK_USER_ID}) gid (${ASTERISK_GROUP_ID})`);
-            
+
             fs.chown(file, ASTERISK_USER_ID, ASTERISK_GROUP_ID, (err) => {
                 if (err) return reject({ msg: 'Could not change permissions for ' + file, error: err });
 
@@ -121,9 +284,23 @@ class FaxProcessor {
         });
     }
 
+    checkIncomingFaxes() {
+        return new Promise((resolve, reject) => {
+            console.log('--> Checking pending incoming faxes');
+
+            fs.readdir(ASTERISK_SPOOL_FAX_IN_DIR, (err, files) => {
+                if (err) return reject({ msg: 'Could not read incoming faxes directory', error: err });
+
+                let metaFiles = files.filter((file) => { return file.indexOf('.json') > -1; });
+
+                resolve(metaFiles);
+            });
+        });
+    }
+
     checkOutgoingFaxes() {
         return new Promise((resolve, reject) => {
-            console.log('--> Checking pending faxes');
+            console.log('--> Checking pending outgoing faxes');
             this.knex
                 .select('faxes_outgoing.id', 'faxes_outgoing.fax_data', 'faxes_outgoing.filename', 'faxes_outgoing.outgoing_number_id', 'faxes_outgoing.to')
                 .from('faxes_outgoing')
@@ -182,7 +359,23 @@ class FaxProcessor {
                 .catch(reject);
         });
     }
-
+    
+    convertTiffToPDF(tiffFile) {
+        return new Promise((resolve, reject) => {
+            let destinationPDFFile = tiffFile.replace(/\.tiff/i, '.pdf').replace(/\s/g, '_');
+            
+            console.log('--> Converting PDF file to TIFF', destinationPDFFile);
+            
+            let command = `tiff2pdf -o ${destinationPDFFile} ${tiffFile}`;
+            
+            exec(command, (err) => {
+                if (err) return reject({ msg: 'Could not convert TIFF to PDF', error: err});
+                
+                resolve(destinationPDFFile); 
+            });
+        });
+    }
+    
     convertPDFToTiff(pdfFile) {
         return new Promise((resolve, reject) => {
             // change .pdf to .tiff (case insensitive) and replace whitespace with _ globally
