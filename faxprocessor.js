@@ -20,13 +20,8 @@ class FaxProcessor {
         return new Promise((resolve, reject) => {
             // make sure required folders exists
 
-
-            console.log('--> Making sure', ASTERISK_SPOOL_FAX_IN_DIR, 'exists');
-
             mkdirp(ASTERISK_SPOOL_FAX_IN_DIR, (err) => {
                 if (err) return reject({ msg: 'Could not create incoming fax directory', error: err });
-
-                console.log('--> Making sure', ASTERISK_SPOOL_FAX_OUT_DIR, 'exists');
 
                 mkdirp(ASTERISK_SPOOL_FAX_OUT_DIR, (err) => {
                     if (err) return reject({ msg: 'Could not create outgoing fax directory', error: err });
