@@ -19,17 +19,17 @@ class FaxProcessor {
     processAndSendPendingFaxes() {
         return new Promise((resolve, reject) => {
             // make sure required folders exists
-            
-            
+
+
             console.log('--> Making sure', ASTERISK_SPOOL_FAX_IN_DIR, 'exists');
-            
+
             mkdirp(ASTERISK_SPOOL_FAX_IN_DIR, (err) => {
-                if (err) return reject('Could not create incoming fax directory', err);
-                
+                if (err) return reject({ msg: 'Could not create incoming fax directory', error: err });
+
                 console.log('--> Making sure', ASTERISK_SPOOL_FAX_OUT_DIR, 'exists');
-                
+
                 mkdirp(ASTERISK_SPOOL_FAX_OUT_DIR, (err) => {
-                    if (err) return reject('Could not create outgoing fax directory', err);
+                    if (err) return reject({ msg: 'Could not create outgoing fax directory', error: err });
 
                     this.checkOutgoingFaxes()
                         .then((pendingFaxes) => {
@@ -66,9 +66,9 @@ class FaxProcessor {
     sendFax(callfile) {
         return new Promise((resolve, reject) => {
             let filename = path.basename(callfile);
-            
+
             fs.rename(callfile, path.join(ASTERISK_SPOOL_OUTGOING_DIR, filename), (err) => {
-                if (err) return reject('Could not move callfile to', ASTERISK_SPOOL_OUTGOING_DIR, err);
+                if (err) return reject({ msg: 'Could not move callfile to', ASTERISK_SPOOL_OUTGOING_DIR, error: err });
 
                 resolve();
             });
@@ -77,15 +77,15 @@ class FaxProcessor {
 
     processOutgoingFax(outgoingFax) {
         return new Promise((resolve, reject) => {
-            
+
             let id = outgoingFax.id;
             let fax_data = outgoingFax.fax_data;
             let filename = outgoingFax.filename;
             let outgoing_number_id = outgoingFax.outgoing_number_id;
             let to = outgoingFax.to;
-            
+
             console.log('--> Processing fax', id);
-            
+
             let pdfFile = null;
             let tiffFile = null;
             let callFile = null;
@@ -96,12 +96,12 @@ class FaxProcessor {
                 })
                 .then((_pdfFile) => {
                     pdfFile = _pdfFile;
-                    
+
                     return this.convertPDFToTiff(pdfFile);
                 })
                 .then((_tiffFile) => {
                     tiffFile = _tiffFile;
-                    
+
                     return this.generateCallFile(outgoing_number_id, id, tiffFile, to);
                 })
                 .then((_callFile) => {
@@ -122,28 +122,28 @@ class FaxProcessor {
     writeFaxPDF(pdfData, filename) {
         return new Promise((resolve, reject) => {
             if (filename.toLowerCase().indexOf('.pdf') == -1) {
-                return reject('Only handling .pdf files');
+                return reject({ msg: 'Only handling .pdf files', error: null });
             }
 
             let destinationFile = path.join(ASTERISK_SPOOL_FAX_OUT_DIR, filename);
-            
+
             console.log('--> Writing PDF file from data', destinationFile);
-            
+
             fs.writeFile(destinationFile, pdfData, (err) => {
-                if (err) return reject(err);
+                if (err) return reject({ msg: 'Could not write PDF file', error: err });
 
                 resolve(destinationFile);
             });
         });
     }
-    
+
     removeFaxPDF(pdfFile) {
         return new Promise((resolve, reject) => {
             console.log('--> Removing PDF file', pdfFile);
             fs.unlink(pdfFile, (err) => {
-                if (err) return reject('Could not delete PDF file', err);
-                
-                resolve(); 
+                if (err) return reject({ msg: 'Could not delete PDF file', error: err });
+
+                resolve();
             });
         });
     }
@@ -151,7 +151,7 @@ class FaxProcessor {
     updateFaxState(id, state) {
         return new Promise((resolve, reject) => {
             console.log('--> Updating fax state', id, state);
-            
+
             this.knex.transaction((trx) => {
                 trx
                     .where('id', id)
@@ -171,16 +171,16 @@ class FaxProcessor {
         return new Promise((resolve, reject) => {
             // change .pdf to .tiff (case insensitive) and replace whitespace with _ globally
             let destinationTiffFile = pdfFile.replace(/\.pdf/i, '.tiff').replace(/\s/g, '_');
-            
+
             console.log('--> Converting PDF file to TIFF', destinationTiffFile);
-            
+
             let command = `gs ${GHOSTSCRIPT_ARGUMENTS} -sOutputFile=${destinationTiffFile} ${pdfFile}`;
-            
+
             console.log('----> Using command', command);
-            
+
             // gs - ghostscript converts the .pdf to .tiff 
             exec(command, (err) => {
-                if (err) return reject('Could not convert PDF to tiff', err);
+                if (err) return reject({ msg: 'Could not convert PDF to tiff', error: err });
 
                 resolve(destinationTiffFile);
             });
@@ -196,7 +196,7 @@ class FaxProcessor {
                 .where('is_fax', 'yes')
                 .then((number) => {
                     if (number.length != 1) {
-                        return reject('Could not find outgoing fax number to use');
+                        return reject({ msg: 'Could not find outgoing fax number to use', error: null });
                     }
 
                     let fullNumber = number[0].full_number;
@@ -206,7 +206,7 @@ class FaxProcessor {
                     if (ppidHeader) ppidHeader = ppidHeader.replace(/;/g, '\\;');
 
                     let callfile =
-`Channel:PJSIP/${receiver}@${trunk}
+                        `Channel:PJSIP/${receiver}@${trunk}
 CallerID:"${fullNumber}"<${fullNumber}>
 MaxRetries:4
 RetryTime:60
@@ -220,11 +220,11 @@ Set:FAXFILE=${tiffFile}
 ${ppidHeader ? `Set:PJSIP_HEADER(add,P-Preferred-Identity)=${ppidHeader}` : ''}`;
 
                     let callFilePath = tiffFile.replace(/\.tiff/i, '.call');
-                    
+
                     console.log('--> Generating callfile', callFilePath);
-                    
+
                     fs.writeFile(callFilePath, callfile, (err) => {
-                        if (err) return reject('Could not write callfile', err);
+                        if (err) return reject({ msg: 'Could not write callfile', error: err });
 
                         resolve(callFilePath);
                     });
