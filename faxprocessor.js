@@ -49,7 +49,7 @@ class FaxProcessor {
 
     setAsteriskPermissions(file) {
         return new Promise((resolve, reject) => {
-            console.log(`--> Setting permissions for ${file} to uid (${this.asteriskUID}) gid (${this.asteriskGID})`);
+            console.log(`--> Setting permissions for ${file} to uid (${ASTERISK_USER_ID}) gid (${ASTERISK_GROUP_ID})`);
             
             fs.chown(file, ASTERISK_USER_ID, ASTERISK_GROUP_ID, (err) => {
                 if (err) return reject({ msg: 'Could not change permissions for ' + file, error: err });
