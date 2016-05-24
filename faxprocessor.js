@@ -174,8 +174,12 @@ class FaxProcessor {
             
             console.log('--> Converting PDF file to TIFF', destinationTiffFile);
             
+            let command = `gs ${GHOSTSCRIPT_ARGUMENTS} -sOutputFile=${destinationTiffFile} ${pdfFile}`;
+            
+            console.log('----> Using command', command);
+            
             // gs - ghostscript converts the .pdf to .tiff 
-            exec(`gs ${GHOSTSCRIPT_ARGUMENTS} -sOutputFile=${destinationTiffFile} ${pdfFile}`, (err) => {
+            exec(command, (err) => {
                 if (err) return reject('Could not convert PDF to tiff', err);
 
                 resolve(destinationTiffFile);
