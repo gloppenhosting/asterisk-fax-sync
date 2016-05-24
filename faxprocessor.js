@@ -76,23 +76,32 @@ class FaxProcessor {
             let filename = outgoingFax.filename;
             let outgoing_number_id = outgoingFax.outgoing_number_id;
             let to = outgoingFax.to;
-
+            
+            let pdfFile = null;
+            let tiffFile = null;
             let callFile = null;
 
             this.updateFaxState(id, 'processing')
                 .then(() => {
                     return this.writeFaxPDF(fax_data, filename);
                 })
-                .then((pdfFile) => {
+                .then((_pdfFile) => {
+                    pdfFile = _pdfFile;
+                    
                     return this.convertPDFToTiff(pdfFile);
                 })
-                .then((tiffFile) => {
+                .then((_tiffFile) => {
+                    tiffFile = _tiffFile;
+                    
                     return this.generateCallFile(outgoing_number_id, id, tiffFile, to);
                 })
                 .then((_callFile) => {
                     callFile = _callFile;
 
                     return this.updateFaxState(id, 'processed');
+                })
+                .then(() => {
+                    return this.removeFaxPDF(pdfFile);
                 })
                 .then(() => {
                     resolve(callFile);
@@ -113,6 +122,16 @@ class FaxProcessor {
                 if (err) return reject(err);
 
                 resolve(destinationFile);
+            });
+        });
+    }
+    
+    removeFaxPDF(pdfFile) {
+        return new Promise((resolve, reject) => {
+            fs.unlink(pdfFile, (err) => {
+                if (err) return reject('Could not delete PDF file', err);
+                
+                resolve(); 
             });
         });
     }
