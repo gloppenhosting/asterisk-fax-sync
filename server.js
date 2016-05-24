@@ -59,7 +59,7 @@ domain.run(function() {
 
     const FaxProcessor = require('./faxprocessor');
     
-    const ownServerName = 'odn1-voip-cluster02-upstream01'; //require('os').hostname();
+    const ownServerName = require('os').hostname();
     const faxProcessor = new FaxProcessor(ownServerName, knex);
 
     let loop = () => {
