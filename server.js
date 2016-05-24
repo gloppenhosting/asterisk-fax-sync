@@ -19,7 +19,7 @@ domain.on('error', function(err) {
 
 // Encapsulate it all into a domain to catch all errors
 domain.run(function() {
-    "use strict";
+    'use strict'
 
     var knex = require('knex')({
         client: 'mysql',
@@ -57,27 +57,26 @@ domain.run(function() {
             })
     }, 10000);
 
-    let FaxProcessor = require('./faxprocessor');
-    const ownServerName = 'odn1-voip-cluster02-upstream01'; //require('os').hostname();
-    const faxDirectoryOut = '/var/spool/asterisk/fax/outgoing';
-    const faxDirectoryIn = '/var/spool/asterisk/fax/incoming';
-    const faxProcessor = new FaxProcessor(ownServerName, faxDirectoryOut, faxDirectoryIn, knex);
+    const FaxProcessor = require('./faxprocessor');
+    
+    const ownServerName = require('os').hostname();
+    const faxProcessor = new FaxProcessor(ownServerName, knex);
 
-    mkdirp(faxDirectoryOut, function(err) {
-        mkdirp(faxDirectoryIn, function(err) {
-            let loop = () => {
-                if (require('os').hostname().toString().indexOf('upstream') <= -1) {
-                    return;
-                }
+    let loop = () => {
+        if (ownServerName.toString().indexOf('upstream') <= -1) {
+            console.error('Only running on upstream servers. Halting, not exiting, since exiting would induce an app-restart');
+            return;
+        }
 
-                faxProcessor.processAndSendPendingFaxes()
-                    .then(() => {
-                        setTimeout(loop, config.get('update_interval_sec') * 1000);
-                    });
-            };
+        faxProcessor.processAndSendPendingFaxes()
+            .then(() => {
+                setTimeout(loop, config.get('update_interval_sec') * 1000);
+            })
+            .catch((err) => {
+                console.error('An error occurred, exiting', err);
+                process.exit(1);
+            });
+    };
 
-            loop();
-        });
-    });
-
+    loop();
 });

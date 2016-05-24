@@ -3,30 +3,44 @@
 const fs = require('fs');
 const path = require('path');
 const exec = require('child_process').exec;
+const mkdirp = require('mkdirp');
+
+const GHOSTSCRIPT_ARGUMENTS = process.env.ASTFAX_GS_ARGS || '-q -dNOPAUSE -dBATCH -sDEVICE=tiffg4 -sPAPERSIZE=letter';
+const ASTERISK_SPOOL_OUTGOING_DIR = process.env.ASTFAX_SPOOL_OUT_DIR || '/var/spool/asterisk/outgoing/';
+const ASTERISK_SPOOL_FAX_IN_DIR = process.env.ASTFAX_FAX_IN_DIR || '/var/spool/asterisk/fax/incoming/';
+const ASTERISK_SPOOL_FAX_OUT_DIR = process.env.ASTFAX_FAX_OUT_DIR ||  '/var/spool/asterisk/fax/outgoing/';
 
 class FaxProcessor {
-    constructor(serverName, faxDirectoryOut, faxDirectoryIn, knex) {
+    constructor(serverName, knex) {
         this.knex = knex;
         this.serverName = serverName;
-        this.faxDirectoryOut = faxDirectoryOut;
-        this.faxDirectoryIn = faxDirectoryIn;
     }
 
     processAndSendPendingFaxes() {
         return new Promise((resolve, reject) => {
-            this.checkOutgoingFaxes()
-                .then((pendingFaxes) => {
-                    return Promise.all(pendingFaxes.map((pendingFax) => {
-                        return this.processOutgoingFax(pendingFax);
-                    }));
-                })
-                .then((callfiles) => {
-                    return Promise.all(callfiles.map((callfile) => {
-                        return this.sendFax(callfile);
-                    }));
-                })
-                .then(resolve)
-                .catch(reject);
+            // make sure required folders exists
+            
+            mkdirp(ASTERISK_SPOOL_FAX_IN_DIR, (err) => {
+                if (err) return reject('Could not create incoming fax directory', err);
+
+                mkdirp(ASTERISK_SPOOL_FAX_OUT_DIR, (err) => {
+                    if (err) return reject('Could not create outgoing fax directory', err);
+
+                    this.checkOutgoingFaxes()
+                        .then((pendingFaxes) => {
+                            return Promise.all(pendingFaxes.map((pendingFax) => {
+                                return this.processOutgoingFax(pendingFax);
+                            }));
+                        })
+                        .then((callfiles) => {
+                            return Promise.all(callfiles.map((callfile) => {
+                                return this.sendFax(callfile);
+                            }));
+                        })
+                        .then(resolve)
+                        .catch(reject);
+                });
+            });
         });
     }
 
@@ -46,10 +60,9 @@ class FaxProcessor {
     sendFax(callfile) {
         return new Promise((resolve, reject) => {
             let filename = path.basename(callfile);
-            fs.rename(callfile, path.join('/var/spool/asterisk/outgoing/', filename), (err) => {
-                if (err) {
-                    return reject(err);
-                }
+            
+            fs.rename(callfile, path.join(ASTERISK_SPOOL_OUTGOING_DIR, filename), (err) => {
+                if (err) return reject('Could not move callfile to', ASTERISK_SPOOL_OUTGOING_DIR, err);
 
                 resolve();
             });
@@ -64,6 +77,8 @@ class FaxProcessor {
             let outgoing_number_id = outgoingFax.outgoing_number_id;
             let to = outgoingFax.to;
 
+            let callFile = null;
+
             this.updateFaxState(id, 'processing')
                 .then(() => {
                     return this.writeFaxPDF(fax_data, filename);
@@ -74,7 +89,12 @@ class FaxProcessor {
                 .then((tiffFile) => {
                     return this.generateCallFile(outgoing_number_id, id, tiffFile, to);
                 })
-                .then((callFile) => {
+                .then((_callFile) => {
+                    callFile = _callFile;
+
+                    return this.updateFaxState(id, 'processed');
+                })
+                .then(() => {
                     resolve(callFile);
                 })
                 .catch(reject);
@@ -87,12 +107,10 @@ class FaxProcessor {
                 return reject('Only handling .pdf files');
             }
 
-            let destinationFile = this.faxDirectoryOut + filename;
+            let destinationFile = path.join(ASTERISK_SPOOL_FAX_OUT_DIR, filename);
 
             fs.writeFile(destinationFile, pdfData, (err) => {
-                if (err) {
-                    return reject(err);
-                }
+                if (err) return reject(err);
 
                 resolve(destinationFile);
             });
@@ -101,16 +119,16 @@ class FaxProcessor {
 
     updateFaxState(id, state) {
         return new Promise((resolve, reject) => {
-            this.knex.transaction(function(trx) {
-                    trx
-                        .where('id', id)
-                        .update({
-                            state: state
-                        })
-                        .into(faxes_outgoing)
-                        .then(trx.commit)
-                        .catch(trx.rollback);
-                })
+            this.knex.transaction((trx) => {
+                trx
+                    .where('id', id)
+                    .update({
+                        state: state
+                    })
+                    .into('faxes_outgoing')
+                    .then(trx.commit)
+                    .catch(trx.rollback);
+            })
                 .then(resolve)
                 .catch(reject);
         });
@@ -118,12 +136,12 @@ class FaxProcessor {
 
     convertPDFToTiff(pdfFile) {
         return new Promise((resolve, reject) => {
-            let destinationTiffFile = pdfFile.replace(/\.pdf/i, '.tiff');
+            // change .pdf to .tiff (case insensitive) and replace whitespace with _ globally
+            let destinationTiffFile = pdfFile.replace(/\.pdf/i, '.tiff').replace(/\s/g, '_');
 
-            exec('gs -q -dNOPAUSE -dBATCH -sDEVICE=tiffg4 -sPAPERSIZE=letter -sOutputFile=' + destinationTiffFile + ' ' + pdfFile, (err) => {
-                if (err) {
-                    return reject(err);
-                }
+            // gs - ghostscript converts the .pdf to .tiff 
+            exec(`gs ${GHOSTSCRIPT_ARGUMENTS} -sOutputFile=${destinationTiffFile} ${pdfFile}`, (err) => {
+                if (err) return reject('Could not convert PDF to tiff', err);
 
                 resolve(destinationTiffFile);
             });
@@ -146,12 +164,17 @@ class FaxProcessor {
                     let ppidHeader = number[0].header_ppid;
                     let trunk = number[0].ps_endpoints_id;
 
+                    if (ppidHeader) ppidHeader = ppidHeader.replace(/;/g, '\\;');
+
                     console.log('--> Generating callfile');
 
-                    let callfile = `Channel:PJSIP/${receiver}@${trunk}
-Callerid:"${fullNumber}"<${fullNumber}>
-Maxretries:0
-Waittime:45
+                    let callfile =
+`Channel:PJSIP/${receiver}@${trunk}
+CallerID:"${fullNumber}"<${fullNumber}>
+MaxRetries:4
+RetryTime:60
+WaitTime:45
+Archive:Yes
 Context:fax
 Extension:out
 Priority:1
@@ -159,15 +182,12 @@ Set:FAXID=${faxId}
 Set:FAXFILE=${tiffFile}
 ${ppidHeader ? `Set:PJSIP_HEADER(add,P-Preferred-Identity)=${ppidHeader}` : ''}`;
 
-                    let callFilePath = tiffFile.replace('.tiff', '.call');
+                    let callFilePath = tiffFile.replace(/\.tiff/i, '.call');
 
                     fs.writeFile(callFilePath, callfile, (err) => {
-                        if (err) {
-                            return reject(err);
-                        }
+                        if (err) return reject('Could not write callfile', err);
 
                         resolve(callFilePath);
-
                     });
                 })
                 .catch(reject);
