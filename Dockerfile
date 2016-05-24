@@ -8,7 +8,7 @@ ENV NODE_DEBUG false
 RUN echo http://dl-cdn.alpinelinux.org/alpine/edge/testing >> /etc/apk/repositories
 RUN apk update
 RUN apk add ghostscript
-RUN apk add libtiff
+RUN apk add tiff
 
 COPY /server.js /server.js
 COPY /package.json /package.json
