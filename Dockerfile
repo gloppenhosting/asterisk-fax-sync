@@ -5,6 +5,8 @@ ENV NODE_DEBUG false
 
 #RUN apk add --update nodejs
 
+RUN echo http://dl-cdn.alpinelinux.org/alpine/edge/testing >> /etc/apk/repositories
+RUN apk update
 RUN apk add ghostscript
 RUN apk add libtiff
 
