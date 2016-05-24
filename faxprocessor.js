@@ -11,16 +11,13 @@ const ASTERISK_SPOOL_OUTGOING_DIR = process.env.ASTFAX_SPOOL_OUT_DIR || '/var/sp
 const ASTERISK_SPOOL_FAX_IN_DIR = process.env.ASTFAX_FAX_IN_DIR || '/var/spool/asterisk/fax/incoming/';
 const ASTERISK_SPOOL_FAX_OUT_DIR = process.env.ASTFAX_FAX_OUT_DIR || '/var/spool/asterisk/fax/outgoing/';
 
-const ASTERISK_USER_NAME = process.env.ASTFAX_AST_USERNAME || 'asterisk';
-const ASTERISK_GROUP_NAME = process.env.ASTFAX_AST_GROUPNAME || 'asterisk';
+const ASTERISK_USER_ID = parseInt(process.env.ASTFAX_AST_UID) || 0;
+const ASTERISK_GROUP_ID = parseInt(process.env.ASTFAX_AST_GID) || 0;
 
 class FaxProcessor {
     constructor(serverName, knex) {
         this.knex = knex;
         this.serverName = serverName;
-
-        this.asteriskUID = parseInt(userid.uid(ASTERISK_USER_NAME)) || 0;
-        this.asteriskGID = parseInt(userid.gid(ASTERISK_GROUP_NAME)) || 0;
     }
 
     processAndSendPendingFaxes() {
@@ -55,7 +52,7 @@ class FaxProcessor {
         return new Promise((resolve, reject) => {
             console.log(`--> Setting permissions for ${file} to user ${ASTERISK_USER_NAME}(${this.asteriskUID}) group ${ASTERISK_GROUP_NAME}(${this.asteriskGID})`);
             
-            fs.chown(file, this.asteriskUID, this.asteriskGID, (err) => {
+            fs.chown(file, ASTERISK_USER_ID, ASTERISK_GROUP_ID, (err) => {
                 if (err) return reject({ msg: 'Could not change permissions for ' + file, error: err });
 
                 resolve();
