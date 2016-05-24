@@ -8,7 +8,7 @@ const mkdirp = require('mkdirp');
 const GHOSTSCRIPT_ARGUMENTS = process.env.ASTFAX_GS_ARGS || '-q -dNOPAUSE -dBATCH -sDEVICE=tiffg4 -sPAPERSIZE=letter';
 const ASTERISK_SPOOL_OUTGOING_DIR = process.env.ASTFAX_SPOOL_OUT_DIR || '/var/spool/asterisk/outgoing/';
 const ASTERISK_SPOOL_FAX_IN_DIR = process.env.ASTFAX_FAX_IN_DIR || '/var/spool/asterisk/fax/incoming/';
-const ASTERISK_SPOOL_FAX_OUT_DIR = process.env.ASTFAX_FAX_OUT_DIR ||  '/var/spool/asterisk/fax/outgoing/';
+const ASTERISK_SPOOL_FAX_OUT_DIR = process.env.ASTFAX_FAX_OUT_DIR || '/var/spool/asterisk/fax/outgoing/';
 
 class FaxProcessor {
     constructor(serverName, knex) {
@@ -20,9 +20,14 @@ class FaxProcessor {
         return new Promise((resolve, reject) => {
             // make sure required folders exists
             
+            
+            console.log('--> Making sure', ASTERISK_SPOOL_FAX_IN_DIR, 'exists');
+            
             mkdirp(ASTERISK_SPOOL_FAX_IN_DIR, (err) => {
                 if (err) return reject('Could not create incoming fax directory', err);
-
+                
+                console.log('--> Making sure', ASTERISK_SPOOL_FAX_OUT_DIR, 'exists');
+                
                 mkdirp(ASTERISK_SPOOL_FAX_OUT_DIR, (err) => {
                     if (err) return reject('Could not create outgoing fax directory', err);
 
@@ -46,6 +51,7 @@ class FaxProcessor {
 
     checkOutgoingFaxes() {
         return new Promise((resolve, reject) => {
+            console.log('--> Checking pending faxes');
             this.knex
                 .select('faxes_outgoing.id', 'faxes_outgoing.fax_data', 'faxes_outgoing.filename', 'faxes_outgoing.outgoing_number_id', 'faxes_outgoing.to')
                 .from('faxes_outgoing')
@@ -71,11 +77,14 @@ class FaxProcessor {
 
     processOutgoingFax(outgoingFax) {
         return new Promise((resolve, reject) => {
+            
             let id = outgoingFax.id;
             let fax_data = outgoingFax.fax_data;
             let filename = outgoingFax.filename;
             let outgoing_number_id = outgoingFax.outgoing_number_id;
             let to = outgoingFax.to;
+            
+            console.log('--> Processing fax', id);
             
             let pdfFile = null;
             let tiffFile = null;
@@ -117,7 +126,9 @@ class FaxProcessor {
             }
 
             let destinationFile = path.join(ASTERISK_SPOOL_FAX_OUT_DIR, filename);
-
+            
+            console.log('--> Writing PDF file from data', destinationFile);
+            
             fs.writeFile(destinationFile, pdfData, (err) => {
                 if (err) return reject(err);
 
@@ -128,6 +139,7 @@ class FaxProcessor {
     
     removeFaxPDF(pdfFile) {
         return new Promise((resolve, reject) => {
+            console.log('--> Removing PDF file', pdfFile);
             fs.unlink(pdfFile, (err) => {
                 if (err) return reject('Could not delete PDF file', err);
                 
@@ -138,6 +150,8 @@ class FaxProcessor {
 
     updateFaxState(id, state) {
         return new Promise((resolve, reject) => {
+            console.log('--> Updating fax state', id, state);
+            
             this.knex.transaction((trx) => {
                 trx
                     .where('id', id)
@@ -157,7 +171,9 @@ class FaxProcessor {
         return new Promise((resolve, reject) => {
             // change .pdf to .tiff (case insensitive) and replace whitespace with _ globally
             let destinationTiffFile = pdfFile.replace(/\.pdf/i, '.tiff').replace(/\s/g, '_');
-
+            
+            console.log('--> Converting PDF file to TIFF', destinationTiffFile);
+            
             // gs - ghostscript converts the .pdf to .tiff 
             exec(`gs ${GHOSTSCRIPT_ARGUMENTS} -sOutputFile=${destinationTiffFile} ${pdfFile}`, (err) => {
                 if (err) return reject('Could not convert PDF to tiff', err);
@@ -185,8 +201,6 @@ class FaxProcessor {
 
                     if (ppidHeader) ppidHeader = ppidHeader.replace(/;/g, '\\;');
 
-                    console.log('--> Generating callfile');
-
                     let callfile =
 `Channel:PJSIP/${receiver}@${trunk}
 CallerID:"${fullNumber}"<${fullNumber}>
@@ -202,7 +216,9 @@ Set:FAXFILE=${tiffFile}
 ${ppidHeader ? `Set:PJSIP_HEADER(add,P-Preferred-Identity)=${ppidHeader}` : ''}`;
 
                     let callFilePath = tiffFile.replace(/\.tiff/i, '.call');
-
+                    
+                    console.log('--> Generating callfile', callFilePath);
+                    
                     fs.writeFile(callFilePath, callfile, (err) => {
                         if (err) return reject('Could not write callfile', err);
 
