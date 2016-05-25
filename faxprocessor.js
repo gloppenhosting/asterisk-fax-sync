@@ -5,66 +5,44 @@ const path = require('path');
 const exec = require('child_process').exec;
 const mkdirp = require('mkdirp');
 
-const GHOSTSCRIPT_ARGUMENTS = process.env.ASTFAX_GS_ARGS || '-q -dNOPAUSE -dBATCH -sDEVICE=tiffg4 -sPAPERSIZE=letter';
-const ASTERISK_SPOOL_OUTGOING_DIR = process.env.ASTFAX_SPOOL_OUT_DIR || '/var/spool/asterisk/outgoing/';
-const ASTERISK_SPOOL_FAX_IN_DIR = process.env.ASTFAX_FAX_IN_DIR || '/var/spool/asterisk/fax/incoming/';
-const ASTERISK_SPOOL_FAX_OUT_DIR = process.env.ASTFAX_FAX_OUT_DIR || '/var/spool/asterisk/fax/outgoing/';
+const GHOSTSCRIPT_ARGUMENTS         = process.env.ASTFAX_GS_ARGS || '-q -dNOPAUSE -dBATCH -sDEVICE=tiffg4 -sPAPERSIZE=a4';
+const TIFF2PDF_ARGUMENTS            = process.env.ASTFAX_T2P_ARGS || '-p A4 -f -d';
 
-const ASTERISK_USER_ID = parseInt(process.env.ASTFAX_AST_UID) || 0;
-const ASTERISK_GROUP_ID = parseInt(process.env.ASTFAX_AST_GID) || 0;
+const ASTERISK_SPOOL_OUTGOING_DIR   = process.env.ASTFAX_SPOOL_OUT_DIR || '/var/spool/asterisk/outgoing/';
+const ASTERISK_SPOOL_FAX_IN_DIR     = process.env.ASTFAX_FAX_IN_DIR || '/var/spool/asterisk/fax/incoming/';
+const ASTERISK_SPOOL_FAX_OUT_DIR    = process.env.ASTFAX_FAX_OUT_DIR || '/var/spool/asterisk/fax/outgoing/';
 
-class FaxProcessor {
+const ASTERISK_USER_ID              = parseInt(process.env.ASTFAX_AST_UID) || 0;
+const ASTERISK_GROUP_ID             = parseInt(process.env.ASTFAX_AST_GID) || 0;
+
+class IncomingFaxProcessor {
     constructor(serverName, knex) {
-        this.knex = knex;
         this.serverName = serverName;
+        this.knex = knex;
     }
-
+    
     processAndReceivePendingFaxes() {
         return new Promise((resolve, reject) => {
-            this.checkIncomingFaxes()
-                .then((pendingFaxesMetaFiles) => {
-                    return Promise.all(pendingFaxesMetaFiles.map((pendingFaxMetaFile) => {
-                        return this.processIncomingFax(path.join(ASTERISK_SPOOL_FAX_IN_DIR, pendingFaxMetaFile));
-                    }));
-                })
-                .then((receivedFaxObjects) => {
-                    return Promise.all(receivedFaxObjects.map((receivedFaxObject) => {
-                        return this.receiveFax(receivedFaxObject);
-                    }));
-                })
-                .then(resolve)
-                .catch(reject);
-        });
-    }
-
-    processAndSendPendingFaxes() {
-        return new Promise((resolve, reject) => {
-            // make sure required folders exists
-
             mkdirp(ASTERISK_SPOOL_FAX_IN_DIR, (err) => {
                 if (err) return reject({ msg: 'Could not create incoming fax directory', error: err });
-
-                mkdirp(ASTERISK_SPOOL_FAX_OUT_DIR, (err) => {
-                    if (err) return reject({ msg: 'Could not create outgoing fax directory', error: err });
-
-                    this.checkOutgoingFaxes()
-                        .then((pendingFaxes) => {
-                            return Promise.all(pendingFaxes.map((pendingFax) => {
-                                return this.processOutgoingFax(pendingFax);
-                            }));
-                        })
-                        .then((callfiles) => {
-                            return Promise.all(callfiles.map((callfile) => {
-                                return this.sendFax(callfile);
-                            }));
-                        })
-                        .then(resolve)
-                        .catch(reject);
-                });
+                
+                this.checkIncomingFaxes()
+                    .then((pendingFaxesMetaFiles) => {
+                        return Promise.all(pendingFaxesMetaFiles.map((pendingFaxMetaFile) => {
+                            return this.processIncomingFax(path.join(ASTERISK_SPOOL_FAX_IN_DIR, pendingFaxMetaFile));
+                        }));
+                    })
+                    .then((receivedFaxObjects) => {
+                        return Promise.all(receivedFaxObjects.map((receivedFaxObject) => {
+                            return this.receiveFax(receivedFaxObject);
+                        }));
+                    })
+                    .then(resolve)
+                    .catch(reject);
             });
         });
     }
-
+    
     processIncomingFax(incomingFaxMetaFile) {
         return new Promise((resolve, reject) => {
             console.log('--> Processing incoming fax', incomingFaxMetaFile);
@@ -120,7 +98,7 @@ class FaxProcessor {
             });
         });
     }
-
+    
     getFaxNumberIdFromNumber(number) {
         return new Promise((resolve, reject) => {
             this.knex
@@ -137,7 +115,7 @@ class FaxProcessor {
                 .catch(reject);
         });
     }
-
+    
     getIAXFriendsIdFromServerName(serverName) {
         return new Promise((resolve, reject) => {
             this.knex
@@ -153,7 +131,7 @@ class FaxProcessor {
                 .catch(reject);
         });
     }
-
+    
     removeIncomingFaxFromServer(metaDataFile, tiffFile, pdfFile) {
         return new Promise((resolve, reject) => {
             fs.unlink(metaDataFile, (err) => {
@@ -171,7 +149,7 @@ class FaxProcessor {
             });
         });
     }
-
+    
     getIncomingFaxDataFromFile(file) {
         return new Promise((resolve, reject) => {
             fs.readFile(file, { encoding: 'utf8' }, (err, metaData) => {
@@ -190,7 +168,86 @@ class FaxProcessor {
             });
         });
     }
+    
+    receiveFax(faxObject) {
+        return new Promise((resolve, reject) => {
+            let pdfFile = path.join(ASTERISK_SPOOL_FAX_IN_DIR, faxObject.filename);
+            
+            let faxMetadataFile = `${pdfFile.replace(/\.pdf/i, '.tiff')}.json`; 
+            let faxFile = pdfFile.replace(/\.pdf/i, '.tiff');
+            
+            console.log('--> Deleting incoming fax files', faxMetadataFile, faxFile);
+            this.knex
+                .insert(faxObject)
+                .into('faxes_incoming')
+                .then(() => {
+                    return this.removeIncomingFaxFromServer(faxMetadataFile, faxFile, pdfFile);
+                })
+                .then(resolve)
+                .catch(reject);
+        });
+    }
+    
+    checkIncomingFaxes() {
+        return new Promise((resolve, reject) => {
+            console.log('--> Checking pending incoming faxes');
 
+            fs.readdir(ASTERISK_SPOOL_FAX_IN_DIR, (err, files) => {
+                if (err) return reject({ msg: 'Could not read incoming faxes directory', error: err });
+
+                let metaFiles = files.filter((file) => { return file.indexOf('.json') > -1; });
+
+                resolve(metaFiles);
+            });
+        });
+    }
+    
+    convertTiffToPDF(tiffFile) {
+        return new Promise((resolve, reject) => {
+            let destinationPDFFile = tiffFile.replace(/\.tiff/i, '.pdf').replace(/\s/g, '_');
+            
+            console.log('--> Converting PDF file to TIFF', destinationPDFFile);
+            
+            let command = `tiff2pdf ${TIFF2PDF_ARGUMENTS} -o ${destinationPDFFile} ${tiffFile}`;
+            
+            exec(command, (err) => {
+                if (err) return reject({ msg: 'Could not convert TIFF to PDF', error: err});
+                
+                resolve(destinationPDFFile); 
+            });
+        });
+    }
+}
+
+class OutgoingFaxProcessor {
+    constructor(serverName, knex) {
+        this.serverName = serverName;
+        this.knex = knex;
+    }
+    
+    processAndSendPendingFaxes() {
+        return new Promise((resolve, reject) => {
+            // make sure required folders exists
+            mkdirp(ASTERISK_SPOOL_FAX_OUT_DIR, (err) => {
+                if (err) return reject({ msg: 'Could not create outgoing fax directory', error: err });
+
+                this.checkOutgoingFaxes()
+                    .then((pendingFaxes) => {
+                        return Promise.all(pendingFaxes.map((pendingFax) => {
+                            return this.processOutgoingFax(pendingFax);
+                        }));
+                    })
+                    .then((callfiles) => {
+                        return Promise.all(callfiles.map((callfile) => {
+                            return this.sendFax(callfile);
+                        }));
+                    })
+                    .then(resolve)
+                    .catch(reject);
+            });
+        });
+    }
+    
     processOutgoingFax(outgoingFax) {
         return new Promise((resolve, reject) => {
 
@@ -234,26 +291,7 @@ class FaxProcessor {
                 .catch(reject);
         });
     }
-
-    receiveFax(faxObject) {
-        return new Promise((resolve, reject) => {
-            let pdfFile = path.join(ASTERISK_SPOOL_FAX_IN_DIR, faxObject.filename);
-            
-            let faxMetadataFile = `${pdfFile.replace(/\.pdf/i, '.tiff')}.json`; 
-            let faxFile = pdfFile.replace(/\.pdf/i, '.tiff');
-            
-            console.log('--> Deleting incoming fax files', faxMetadataFile, faxFile);
-            this.knex
-                .insert(faxObject)
-                .into('faxes_incoming')
-                .then(() => {
-                    return this.removeIncomingFaxFromServer(faxMetadataFile, faxFile, pdfFile);
-                })
-                .then(resolve)
-                .catch(reject);
-        });
-    }
-
+    
     sendFax(callfile) {
         return new Promise((resolve, reject) => {
             let filename = path.basename(callfile);
@@ -271,7 +309,7 @@ class FaxProcessor {
             });
         });
     }
-
+    
     setAsteriskPermissions(file) {
         return new Promise((resolve, reject) => {
             console.log(`--> Setting permissions for ${file} to uid (${ASTERISK_USER_ID}) gid (${ASTERISK_GROUP_ID})`);
@@ -283,21 +321,7 @@ class FaxProcessor {
             });
         });
     }
-
-    checkIncomingFaxes() {
-        return new Promise((resolve, reject) => {
-            console.log('--> Checking pending incoming faxes');
-
-            fs.readdir(ASTERISK_SPOOL_FAX_IN_DIR, (err, files) => {
-                if (err) return reject({ msg: 'Could not read incoming faxes directory', error: err });
-
-                let metaFiles = files.filter((file) => { return file.indexOf('.json') > -1; });
-
-                resolve(metaFiles);
-            });
-        });
-    }
-
+    
     checkOutgoingFaxes() {
         return new Promise((resolve, reject) => {
             console.log('--> Checking pending outgoing faxes');
@@ -311,7 +335,7 @@ class FaxProcessor {
                 .catch(reject);
         });
     }
-
+    
     writeFaxPDF(pdfData, filename) {
         return new Promise((resolve, reject) => {
             if (filename.toLowerCase().indexOf('.pdf') == -1) {
@@ -329,7 +353,7 @@ class FaxProcessor {
             });
         });
     }
-
+    
     removeFaxPDF(pdfFile) {
         return new Promise((resolve, reject) => {
             console.log('--> Removing PDF file', pdfFile);
@@ -340,7 +364,7 @@ class FaxProcessor {
             });
         });
     }
-
+    
     updateFaxState(id, state) {
         return new Promise((resolve, reject) => {
             console.log('--> Updating fax state', id, state);
@@ -357,22 +381,6 @@ class FaxProcessor {
             })
                 .then(resolve)
                 .catch(reject);
-        });
-    }
-    
-    convertTiffToPDF(tiffFile) {
-        return new Promise((resolve, reject) => {
-            let destinationPDFFile = tiffFile.replace(/\.tiff/i, '.pdf').replace(/\s/g, '_');
-            
-            console.log('--> Converting PDF file to TIFF', destinationPDFFile);
-            
-            let command = `tiff2pdf -o ${destinationPDFFile} ${tiffFile}`;
-            
-            exec(command, (err) => {
-                if (err) return reject({ msg: 'Could not convert TIFF to PDF', error: err});
-                
-                resolve(destinationPDFFile); 
-            });
         });
     }
     
@@ -395,7 +403,7 @@ class FaxProcessor {
             });
         });
     }
-
+    
     generateCallFile(outgoingNumberId, faxId, tiffFile, receiver) {
         return new Promise((resolve, reject) => {
             this.knex
@@ -440,6 +448,21 @@ ${ppidHeader ? `Set:PJSIP_HEADER(add,P-Preferred-Identity)=${ppidHeader}` : ''}`
                 })
                 .catch(reject);
         });
+    }
+}
+
+class FaxProcessor {
+    constructor(serverName, knex) {
+        this.incomingFaxProcessor = new IncomingFaxProcessor(serverName, knex);
+        this.outgoingFaxProcessor = new OutgoingFaxProcessor(serverName, knex);
+    }
+    
+    processAndSendPendingFaxes() {
+        return this.outgoingFaxProcessor.processAndSendPendingFaxes();
+    }
+    
+    processAndReceivePendingFaxes() {
+        return this.incomingFaxProcessor.processAndReceivePendingFaxes();   
     }
 }
 
