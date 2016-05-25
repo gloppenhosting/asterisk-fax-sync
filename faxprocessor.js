@@ -262,7 +262,7 @@ class OutgoingFaxProcessor {
             let id = outgoingFax.id;
             let fax_data = outgoingFax.fax_data;
             let filename = outgoingFax.filename;
-            let userName = outgoingFax.user_name;
+            let senderName = outgoingFax.user_name;
             let outgoing_number_id = outgoingFax.outgoing_number_id;
             let to = outgoingFax.to;
 
