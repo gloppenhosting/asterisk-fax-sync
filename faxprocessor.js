@@ -15,6 +15,8 @@ const ASTERISK_SPOOL_FAX_OUT_DIR    = process.env.ASTFAX_FAX_OUT_DIR || '/var/sp
 const ASTERISK_USER_ID              = parseInt(process.env.ASTFAX_AST_UID) || 0;
 const ASTERISK_GROUP_ID             = parseInt(process.env.ASTFAX_AST_GID) || 0;
 
+const DEBUG                         = true;
+
 class IncomingFaxProcessor {
     constructor(serverName, knex) {
         this.serverName = serverName;
@@ -45,7 +47,7 @@ class IncomingFaxProcessor {
     
     processIncomingFax(incomingFaxMetaFile) {
         return new Promise((resolve, reject) => {
-            console.log('--> Processing incoming fax', incomingFaxMetaFile);
+            this.log(' Processing fax', incomingFaxMetaFile);
 
             let metadataObject = null;
             let serverId = null;
@@ -176,7 +178,7 @@ class IncomingFaxProcessor {
             let faxMetadataFile = `${pdfFile.replace(/\.pdf/i, '.tiff')}.json`; 
             let faxFile = pdfFile.replace(/\.pdf/i, '.tiff');
             
-            console.log('--> Deleting incoming fax files', faxMetadataFile, faxFile);
+            this.log('Deleting fax files', faxMetadataFile, faxFile);
             this.knex
                 .insert(faxObject)
                 .into('faxes_incoming')
@@ -190,7 +192,7 @@ class IncomingFaxProcessor {
     
     checkIncomingFaxes() {
         return new Promise((resolve, reject) => {
-            console.log('--> Checking pending incoming faxes');
+            this.log('Checking pending faxes');
 
             fs.readdir(ASTERISK_SPOOL_FAX_IN_DIR, (err, files) => {
                 if (err) return reject({ msg: 'Could not read incoming faxes directory', error: err });
@@ -206,7 +208,7 @@ class IncomingFaxProcessor {
         return new Promise((resolve, reject) => {
             let destinationPDFFile = tiffFile.replace(/\.tiff/i, '.pdf').replace(/\s/g, '_');
             
-            console.log('--> Converting PDF file to TIFF', destinationPDFFile);
+            this.log('Converting PDF file to TIFF', destinationPDFFile);
             
             let command = `tiff2pdf ${TIFF2PDF_ARGUMENTS} -o ${destinationPDFFile} ${tiffFile}`;
             
@@ -216,6 +218,12 @@ class IncomingFaxProcessor {
                 resolve(destinationPDFFile); 
             });
         });
+    }
+    
+    log(...logItems) {
+        if (DEBUG) {
+            console.log('Incoming ->', ...logItems);
+        }
     }
 }
 
@@ -257,7 +265,7 @@ class OutgoingFaxProcessor {
             let outgoing_number_id = outgoingFax.outgoing_number_id;
             let to = outgoingFax.to;
 
-            console.log('--> Processing outgoing fax', id);
+            this.log('Processing fax', id);
 
             let pdfFile = null;
             let tiffFile = null;
@@ -299,7 +307,7 @@ class OutgoingFaxProcessor {
             this.setAsteriskPermissions(callfile).then(() => {
                 let destination = path.join(ASTERISK_SPOOL_OUTGOING_DIR, filename);
 
-                console.log('--> Moving callfile to', destination);
+                this.log('Moving callfile to', destination);
 
                 fs.rename(callfile, path.join(ASTERISK_SPOOL_OUTGOING_DIR, filename), (err) => {
                     if (err) return reject({ msg: 'Could not move callfile to', ASTERISK_SPOOL_OUTGOING_DIR, error: err });
@@ -312,7 +320,7 @@ class OutgoingFaxProcessor {
     
     setAsteriskPermissions(file) {
         return new Promise((resolve, reject) => {
-            console.log(`--> Setting permissions for ${file} to uid (${ASTERISK_USER_ID}) gid (${ASTERISK_GROUP_ID})`);
+            this.log(`--> Setting permissions for ${file} to uid (${ASTERISK_USER_ID}) gid (${ASTERISK_GROUP_ID})`);
 
             fs.chown(file, ASTERISK_USER_ID, ASTERISK_GROUP_ID, (err) => {
                 if (err) return reject({ msg: 'Could not change permissions for ' + file, error: err });
@@ -324,7 +332,7 @@ class OutgoingFaxProcessor {
     
     checkOutgoingFaxes() {
         return new Promise((resolve, reject) => {
-            console.log('--> Checking pending outgoing faxes');
+            this.log('Checking pending faxes');
             this.knex
                 .select('faxes_outgoing.id', 'faxes_outgoing.fax_data', 'faxes_outgoing.filename', 'faxes_outgoing.outgoing_number_id', 'faxes_outgoing.to')
                 .from('faxes_outgoing')
@@ -344,7 +352,7 @@ class OutgoingFaxProcessor {
 
             let destinationFile = path.join(ASTERISK_SPOOL_FAX_OUT_DIR, filename);
 
-            console.log('--> Writing PDF file from data', destinationFile);
+            this.log('Writing PDF file from data', destinationFile);
 
             fs.writeFile(destinationFile, pdfData, (err) => {
                 if (err) return reject({ msg: 'Could not write PDF file', error: err });
@@ -356,7 +364,7 @@ class OutgoingFaxProcessor {
     
     removeFaxPDF(pdfFile) {
         return new Promise((resolve, reject) => {
-            console.log('--> Removing PDF file', pdfFile);
+            this.log('Removing PDF file', pdfFile);
             fs.unlink(pdfFile, (err) => {
                 if (err) return reject({ msg: 'Could not delete PDF file', error: err });
 
@@ -367,7 +375,7 @@ class OutgoingFaxProcessor {
     
     updateFaxState(id, state) {
         return new Promise((resolve, reject) => {
-            console.log('--> Updating fax state', id, state);
+            this.log('Updating fax state', id, state);
 
             this.knex.transaction((trx) => {
                 trx
@@ -389,11 +397,11 @@ class OutgoingFaxProcessor {
             // change .pdf to .tiff (case insensitive) and replace whitespace with _ globally
             let destinationTiffFile = pdfFile.replace(/\.pdf/i, '.tiff').replace(/\s/g, '_');
 
-            console.log('--> Converting PDF file to TIFF', destinationTiffFile);
+            this.log('Converting PDF file to TIFF', destinationTiffFile);
 
             let command = `gs ${GHOSTSCRIPT_ARGUMENTS} -sOutputFile=${destinationTiffFile} ${pdfFile}`;
 
-            console.log('----> Using command', command);
+            this.log('Using command', command);
 
             // gs - ghostscript converts the .pdf to .tiff 
             exec(command, (err) => {
@@ -438,7 +446,7 @@ ${ppidHeader ? `Set:PJSIP_HEADER(add,P-Preferred-Identity)=${ppidHeader}` : ''}`
 
                     let callFilePath = tiffFile.replace(/\.tiff/i, '.call');
 
-                    console.log('--> Generating callfile', callFilePath);
+                    this.log('Generating callfile', callFilePath);
 
                     fs.writeFile(callFilePath, callfile, (err) => {
                         if (err) return reject({ msg: 'Could not write callfile', error: err });
@@ -448,6 +456,12 @@ ${ppidHeader ? `Set:PJSIP_HEADER(add,P-Preferred-Identity)=${ppidHeader}` : ''}`
                 })
                 .catch(reject);
         });
+    }
+    
+    log(...logItems) {
+        if (DEBUG) {
+            console.log('Outgoing ->', ...logItems);
+        }
     }
 }
 
