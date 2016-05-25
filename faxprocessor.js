@@ -6,7 +6,7 @@ const exec = require('child_process').exec;
 const mkdirp = require('mkdirp');
 
 const GHOSTSCRIPT_ARGUMENTS         = process.env.ASTFAX_GS_ARGS || '-q -dNOPAUSE -dBATCH -sDEVICE=tiffg4 -sPAPERSIZE=letter';
-const TIFF2PDF_ARGUMENTS            = process.env.ASTFAX_T2P_ARGS || '-p letter -f -d';
+const TIFF2PDF_ARGUMENTS            = process.env.ASTFAX_T2P_ARGS || '-d';
 
 const ASTERISK_SPOOL_OUTGOING_DIR   = process.env.ASTFAX_SPOOL_OUT_DIR || '/var/spool/asterisk/outgoing/';
 const ASTERISK_SPOOL_FAX_IN_DIR     = process.env.ASTFAX_FAX_IN_DIR || '/var/spool/asterisk/fax/incoming/';
