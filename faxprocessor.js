@@ -262,6 +262,7 @@ class OutgoingFaxProcessor {
             let id = outgoingFax.id;
             let fax_data = outgoingFax.fax_data;
             let filename = outgoingFax.filename;
+            let userName = outgoingFax.user_name;
             let outgoing_number_id = outgoingFax.outgoing_number_id;
             let to = outgoingFax.to;
 
@@ -283,7 +284,7 @@ class OutgoingFaxProcessor {
                 .then((_tiffFile) => {
                     tiffFile = _tiffFile;
 
-                    return this.generateCallFile(outgoing_number_id, id, tiffFile, to);
+                    return this.generateCallFile(outgoing_number_id, senderName, id, tiffFile, to);
                 })
                 .then((_callFile) => {
                     callFile = _callFile;
@@ -334,9 +335,10 @@ class OutgoingFaxProcessor {
         return new Promise((resolve, reject) => {
             this.log('Checking pending faxes');
             this.knex
-                .select('faxes_outgoing.id', 'faxes_outgoing.fax_data', 'faxes_outgoing.filename', 'faxes_outgoing.outgoing_number_id', 'faxes_outgoing.to')
+                .select('faxes_outgoing.id', 'faxes_outgoing.fax_data', 'patientsky_endpoints.user_name', 'faxes_outgoing.filename', 'faxes_outgoing.outgoing_number_id', 'faxes_outgoing.to')
                 .from('faxes_outgoing')
                 .innerJoin('iaxfriends', 'iaxfriends.id', 'faxes_outgoing.iaxfriends_id')
+                .innerJoin('patientsky_endpoints', 'patientsky_endpoints.ps_endpoints_id', 'faxes_outgoing.sender_id')
                 .where('iaxfriends.name', this.serverName)
                 .where('state', 'created')
                 .then(resolve)
@@ -412,7 +414,7 @@ class OutgoingFaxProcessor {
         });
     }
     
-    generateCallFile(outgoingNumberId, faxId, tiffFile, receiver) {
+    generateCallFile(outgoingNumberId, senderName, faxId, tiffFile, receiver) {
         return new Promise((resolve, reject) => {
             this.knex
                 .select('full_number', 'header_ppid', 'ps_endpoints_id')
@@ -440,6 +442,7 @@ Archive:Yes
 Context:fax
 Extension:out
 Priority:1
+Set:SENDERNAME=${senderName}
 Set:FAXID=${faxId}
 Set:FAXFILE=${tiffFile}
 ${ppidHeader ? `Set:PJSIP_HEADER(add,P-Preferred-Identity)=${ppidHeader}` : ''}`;
