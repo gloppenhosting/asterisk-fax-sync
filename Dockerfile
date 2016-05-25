@@ -13,4 +13,4 @@ COPY /config /config
 
 RUN npm install
 
-CMD ["node", "server.js"]
+CMD ["node", "--es_staging", "server.js"]
