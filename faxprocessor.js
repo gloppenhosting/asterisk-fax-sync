@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const exec = require('child_process').exec;
 const mkdirp = require('mkdirp');
+const unidecode = require('unidecode');
 
 const GHOSTSCRIPT_ARGUMENTS         = process.env.ASTFAX_GS_ARGS || '-q -dNOPAUSE -dBATCH -sDEVICE=tiffg4 -sPAPERSIZE=letter';
 const TIFF2PDF_ARGUMENTS            = process.env.ASTFAX_T2P_ARGS || '-d';
@@ -442,7 +443,7 @@ Archive:Yes
 Context:fax
 Extension:out
 Priority:1
-Set:SENDERNAME=${senderName}
+Set:SENDERNAME=${unidecode(senderName)}
 Set:FAXID=${faxId}
 Set:FAXFILE=${tiffFile}
 ${ppidHeader ? `Set:PJSIP_HEADER(add,P-Preferred-Identity)=${ppidHeader}` : ''}`;
