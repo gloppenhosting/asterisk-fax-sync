@@ -211,7 +211,7 @@ class IncomingFaxProcessor {
             
             this.log('Converting PDF file to TIFF', destinationPDFFile);
             
-            let command = `tiff2pdf ${TIFF2PDF_ARGUMENTS} -o ${destinationPDFFile} ${tiffFile}`;
+            let command = `tiff2pdf ${TIFF2PDF_ARGUMENTS} -o "${destinationPDFFile}" "${tiffFile}"`;
             
             exec(command, (err) => {
                 if (err) return reject({ msg: 'Could not convert TIFF to PDF', error: err});
@@ -402,7 +402,7 @@ class OutgoingFaxProcessor {
 
             this.log('Converting PDF file to TIFF', destinationTiffFile);
 
-            let command = `gs ${GHOSTSCRIPT_ARGUMENTS} -sOutputFile=${destinationTiffFile} ${pdfFile}`;
+            let command = `gs ${GHOSTSCRIPT_ARGUMENTS} -sOutputFile="${destinationTiffFile}" "${pdfFile}"`;
 
             this.log('Using command', command);
 
