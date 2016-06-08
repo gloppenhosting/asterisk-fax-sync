@@ -353,7 +353,7 @@ class OutgoingFaxProcessor {
                 return reject({ msg: 'Only handling .pdf files', error: null });
             }
 
-            let destinationFile = path.join(ASTERISK_SPOOL_FAX_OUT_DIR, filename).replace(/\s/g, '_');;
+            let destinationFile = path.join(ASTERISK_SPOOL_FAX_OUT_DIR, `${new Date().getTime()}.pdf`);
 
             this.log('Writing PDF file from data', destinationFile);
 
